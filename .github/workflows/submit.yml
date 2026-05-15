@@ -140,6 +140,12 @@ jobs:
               existing = {s["attributes"]["screenshotDisplayType"]: s["id"] for s in r.json().get("data", [])}
               if display_type in existing:
                   set_id = existing[display_type]
+                  # Check if already has screenshots — skip if so
+                  r2 = requests.get(f"{BASE}/appScreenshotSets/{set_id}/appScreenshots", headers=H())
+                  count = len(r2.json().get("data", []))
+                  if count >= len(image_paths):
+                      print(f"  {display_type}: already has {count} screenshots, skipping")
+                      return
               else:
                   r = requests.post(f"{BASE}/appScreenshotSets", headers=H(),
                       json={"data": {"type": "appScreenshotSets",
