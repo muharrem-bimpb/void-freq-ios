@@ -189,61 +189,46 @@ jobs:
               upload_screenshots(loc_id, "APP_IPHONE_65", iphone_shots)
               upload_screenshots(loc_id, "APP_IPAD_PRO_3GEN_129", ipad_shots)
 
-          # Cancel / delete all open review submissions
-          already_submitted = False
-          url = f"{BASE}/reviewSubmissions?filter[app]={app_id}&filter[platform]=IOS&limit=100"
-          while url:
-              r = requests.get(url, headers=H())
-              if r.status_code != 200: break
-              body = r.json()
-              for sub in body.get("data", []):
+          # Find or create a review submission
+          submission_id = None
+          r = requests.get(f"{BASE}/reviewSubmissions?filter[app]={app_id}&filter[platform]=IOS&limit=100", headers=H())
+          if r.status_code == 200:
+              for sub in r.json().get("data", []):
                   sub_state = sub["attributes"].get("state","")
                   sub_id = sub["id"]
-                  print(f"  Submission {sub_id}: state={sub_state}")
-                  if sub_state in ("WAITING_FOR_REVIEW", "IN_REVIEW"):
-                      print("  -> Already in review queue! Skipping create.")
-                      already_submitted = True
-                  elif sub_state not in ("COMPLETE", "CANCELLED"):
-                      # Try DELETE first, then PATCH cancel
-                      r2 = requests.delete(f"{BASE}/reviewSubmissions/{sub_id}", headers=H())
-                      if r2.status_code in (200, 204):
-                          print(f"  Deleted {sub_id}: {r2.status_code}")
-                      else:
-                          # Delete items then retry
-                          ri = requests.get(f"{BASE}/reviewSubmissions/{sub_id}/items", headers=H())
-                          for item in ri.json().get("data", []):
-                              requests.delete(f"{BASE}/reviewSubmissionItems/{item['id']}", headers=H())
-                          r3 = requests.delete(f"{BASE}/reviewSubmissions/{sub_id}", headers=H())
-                          print(f"  Delete after item removal {sub_id}: {r3.status_code}")
-              url = body.get("links", {}).get("next")
+                  print(f"  Existing submission {sub_id}: state={sub_state}")
+                  if sub_state in ("WAITING_FOR_REVIEW", "IN_REVIEW", "COMPLETE"):
+                      print("Already in review or complete!"); sys.exit(0)
+                  elif sub_state == "READY_FOR_REVIEW":
+                      submission_id = sub_id  # reuse this one
+                      break
 
-          if already_submitted:
-              print("App is already in review queue — done!")
-              sys.exit(0)
+          if not submission_id:
+              r = requests.post(f"{BASE}/reviewSubmissions", headers=H(),
+                  json={"data": {"type": "reviewSubmissions", "attributes": {"platform": "IOS"},
+                                 "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})
+              if r.status_code not in (200, 201):
+                  print(f"Create submission: {r.status_code} {r.text}"); sys.exit(1)
+              submission_id = r.json()["data"]["id"]
+              print(f"Created submission: {submission_id}")
+          else:
+              print(f"Reusing submission: {submission_id}")
 
-          # Create review submission
-          r = requests.post(f"{BASE}/reviewSubmissions", headers=H(),
-              json={"data": {"type": "reviewSubmissions", "attributes": {"platform": "IOS"},
-                             "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})
-          if r.status_code not in (200, 201):
-              print(f"Create submission: {r.status_code} {r.text}"); sys.exit(1)
-          submission_id = r.json()["data"]["id"]
-          print(f"Review submission: {submission_id}")
+          # Ensure the app store version is in the submission items
+          ri = requests.get(f"{BASE}/reviewSubmissions/{submission_id}/items", headers=H())
+          existing_versions = [i["relationships"].get("appStoreVersion",{}).get("data",{}).get("id") for i in ri.json().get("data",[])]
+          if version_id not in existing_versions:
+              r = requests.post(f"{BASE}/reviewSubmissionItems", headers=H(),
+                  json={"data": {"type": "reviewSubmissionItems",
+                                 "relationships": {
+                                     "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": submission_id}},
+                                     "appStoreVersion": {"data": {"type": "appStoreVersions", "id": version_id}}
+                                 }}})
+              print(f"Add version item: {r.status_code}" + ("" if r.status_code in (200,201) else f" {r.text[:200]}"))
 
-          # Add version
-          r = requests.post(f"{BASE}/reviewSubmissionItems", headers=H(),
-              json={"data": {"type": "reviewSubmissionItems",
-                             "relationships": {
-                                 "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": submission_id}},
-                                 "appStoreVersion": {"data": {"type": "appStoreVersions", "id": version_id}}
-                             }}})
-          if r.status_code not in (200, 201):
-              print(f"Add item: {r.status_code} {r.text}"); sys.exit(1)
-          print("Version added")
-
-          # Submit
+          # Submit for review
           r = requests.post(f"{BASE}/reviewSubmissions/{submission_id}/actions/submit", headers=H(), json={})
           if r.status_code in (200, 201, 204): print("SUBMITTED FOR APP STORE REVIEW!")
-          elif r.status_code == 409: print("Already in review")
+          elif r.status_code == 409: print(f"409: {r.text[:300]}")
           else: print(f"Submit: {r.status_code} {r.text}"); sys.exit(1)
           PYEOF
