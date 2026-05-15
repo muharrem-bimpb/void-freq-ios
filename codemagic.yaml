@@ -4,15 +4,14 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
 
-    integrations:
-      app_store_connect: Architect-DNA CI
-
     environment:
       xcode: 26
       node: 24
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: ch.architectdna.voidfreq
+      vars:
+        BUNDLE_ID: ch.architectdna.voidfreq
+        TEAM_ID: V28MG47TZC
+      groups:
+        - apple_signing
 
     scripts:
       - name: Install dependencies
@@ -20,6 +19,25 @@ workflows:
 
       - name: Sync Capacitor
         script: npx cap sync ios
+
+      - name: Install signing assets
+        script: |
+          # Keychain
+          security create-keychain -p cmpass build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p cmpass build.keychain
+          security set-keychain-settings -t 7200 -u build.keychain
+
+          # P12 cert
+          echo "$DIST_P12_BASE64" | base64 --decode > /tmp/dist.p12
+          security import /tmp/dist.p12 -k build.keychain -P cmpass -T /usr/bin/codesign -T /usr/bin/xcodebuild
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k cmpass build.keychain
+
+          # Provisioning profile
+          PP_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PP_DIR"
+          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PP_DIR/VoidFreq.mobileprovision"
+          echo "Profile UUID: $(security cms -D -i "$PP_DIR/VoidFreq.mobileprovision" 2>/dev/null | grep -A1 UUID | tail -1 | tr -d ' <>/string')"
 
       - name: Resolve Swift packages
         script: |
@@ -29,15 +47,28 @@ workflows:
 
       - name: Build IPA
         script: |
-          xcode-project build-ipa \
-            --project ios/App/App.xcodeproj \
-            --scheme App \
-            --archive-xcargs "DEVELOPMENT_TEAM=V28MG47TZC"
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -archivePath build/App.xcarchive \
+            archive \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER="VoidFreq Distribution" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            DEVELOPMENT_TEAM=$TEAM_ID
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath build/App.xcarchive \
+            -exportOptionsPlist ios/ExportOptions.plist \
+            -exportPath build/
 
     artifacts:
-      - build/ios/ipa/*.ipa
+      - build/*.ipa
 
     publishing:
       app_store_connect:
         auth: integration
+        api_key: Architect-DNA CI
         submit_to_testflight: true
