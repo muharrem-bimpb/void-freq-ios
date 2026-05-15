@@ -82,11 +82,22 @@ jobs:
 
       - name: Upload to TestFlight
         env:
-          FASTLANE_USER: ${{ secrets.APPLE_ID }}
-          FASTLANE_PASSWORD: ${{ secrets.FASTLANE_PASSWORD }}
-          APP_IDENTIFIER: ${{ secrets.APP_IDENTIFIER }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
         run: |
           gem install fastlane --no-document
+          echo "$ASC_PRIVATE_KEY" > /tmp/asc_key.p8
+          cat > /tmp/api_key.json <<EOF
+          {
+            "key_id": "$ASC_KEY_ID",
+            "issuer_id": "$ASC_ISSUER_ID",
+            "key_filepath": "/tmp/asc_key.p8",
+            "duration": 1200,
+            "in_house": false
+          }
+          EOF
           fastlane run upload_to_testflight \
             ipa:"build/App.ipa" \
-            skip_waiting_for_build_processing:true
+            skip_waiting_for_build_processing:true \
+            api_key_path:"/tmp/api_key.json"
