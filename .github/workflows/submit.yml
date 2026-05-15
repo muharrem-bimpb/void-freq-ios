@@ -195,12 +195,12 @@ jobs:
               for sub in r.json().get("data", []):
                   sub_state = sub["attributes"].get("state","")
                   sub_id = sub["id"]
-                  print(f"  Existing submission {sub_id}: state={sub_state}")
+                  created = sub["attributes"].get("createdDate","")
+                  print(f"  Submission {sub_id}: state={sub_state} created={created}")
                   if sub_state in ("WAITING_FOR_REVIEW", "IN_REVIEW", "COMPLETE"):
                       print("Already in review or complete!"); sys.exit(0)
-                  elif sub_state == "READY_FOR_REVIEW":
-                      submission_id = sub_id  # reuse this one
-                      break
+                  elif sub_state in ("READY_FOR_REVIEW", "DRAFT") and not submission_id:
+                      submission_id = sub_id  # reuse earliest usable one
 
           if not submission_id:
               r = requests.post(f"{BASE}/reviewSubmissions", headers=H(),
