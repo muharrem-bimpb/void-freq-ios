@@ -55,10 +55,16 @@ jobs:
           mkdir -p "$PP_PATH"
           echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PP_PATH/VoidFreq.mobileprovision"
 
+      - name: Resolve Swift Packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project ios/App/App.xcodeproj \
+            -scheme App
+
       - name: Build IPA
         run: |
           xcodebuild \
-            -workspace ios/App/App.xcworkspace \
+            -project ios/App/App.xcodeproj \
             -scheme App \
             -configuration Release \
             -archivePath build/App.xcarchive \
