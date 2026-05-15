@@ -129,27 +129,25 @@ jobs:
           import hashlib, base64, pathlib
 
           def upload_screenshots(localization_id, display_type, image_paths):
-              # Get or create screenshot set for this display type
               r = requests.get(f"{BASE}/appStoreVersionLocalizations/{localization_id}/appScreenshotSets", headers=H())
               existing = {s["attributes"]["screenshotDisplayType"]: s["id"] for s in r.json().get("data", [])}
+              # Delete existing set completely
               if display_type in existing:
-                  set_id = existing[display_type]
-                  # Delete ALL existing screenshots (including broken ones)
-                  r2 = requests.get(f"{BASE}/appScreenshotSets/{set_id}/appScreenshots", headers=H())
-                  shots = r2.json().get("data", [])
-                  for ss in shots:
-                      rd = requests.delete(f"{BASE}/appScreenshots/{ss['id']}", headers=H())
-                  print(f"  {display_type}: cleared {len(shots)} old screenshots")
-              else:
-                  r = requests.post(f"{BASE}/appScreenshotSets", headers=H(),
-                      json={"data": {"type": "appScreenshotSets",
-                                     "attributes": {"screenshotDisplayType": display_type},
-                                     "relationships": {"appStoreVersionLocalization":
-                                         {"data": {"type": "appStoreVersionLocalizations", "id": localization_id}}}}})
-                  if r.status_code not in (200, 201):
-                      print(f"Create set {display_type}: {r.status_code} {r.text[:100]}")
-                      return
-                  set_id = r.json()["data"]["id"]
+                  old_set_id = existing[display_type]
+                  r2 = requests.get(f"{BASE}/appScreenshotSets/{old_set_id}/appScreenshots", headers=H())
+                  for ss in r2.json().get("data", []):
+                      requests.delete(f"{BASE}/appScreenshots/{ss['id']}", headers=H())
+                  requests.delete(f"{BASE}/appScreenshotSets/{old_set_id}", headers=H())
+                  print(f"  {display_type}: wiped old set")
+              # Create fresh set
+              r = requests.post(f"{BASE}/appScreenshotSets", headers=H(),
+                  json={"data": {"type": "appScreenshotSets",
+                                 "attributes": {"screenshotDisplayType": display_type},
+                                 "relationships": {"appStoreVersionLocalization":
+                                     {"data": {"type": "appStoreVersionLocalizations", "id": localization_id}}}}})
+              if r.status_code not in (200, 201):
+                  print(f"Create set {display_type}: {r.status_code} {r.text[:100]}"); return
+              set_id = r.json()["data"]["id"]
 
               for img_path in image_paths:
                   img_bytes = pathlib.Path(img_path).read_bytes()
