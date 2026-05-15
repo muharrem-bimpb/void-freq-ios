@@ -39,8 +39,8 @@ jobs:
           echo "$DIST_CERT_BASE64" | base64 --decode > dist.cer
           echo "$DIST_KEY_BASE64"  | base64 --decode > dist.key
 
-          # Convert to p12
-          openssl x509 -in dist.cer -inform DER -out dist.pem
+          # Convert to p12 (auto-detect PEM or DER)
+          openssl x509 -in dist.cer -out dist.pem 2>/dev/null || openssl x509 -in dist.cer -inform DER -out dist.pem
           openssl pkcs12 -export -out dist.p12 -inkey dist.key -in dist.pem -passout pass:buildpass
 
           # Import into keychain
