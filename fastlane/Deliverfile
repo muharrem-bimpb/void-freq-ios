@@ -1,0 +1,24 @@
+app_identifier "ch.architectdna.voidfreq"
+username "systems@architect-dna.ch"
+
+name({ "en-US" => "VOID FREQ — Focus Studio" })
+subtitle({ "en-US" => "Ambient Sound for Deep Focus" })
+
+
+primary_category "PRODUCTIVITY"
+secondary_category "MUSIC"
+
+
+copyright "© 2026 Muharrem Akdemir"
+
+automatic_release false
+
+submit_for_review false  # set true when ready to submit
+
+metadata_path "./fastlane/metadata"
+screenshots_path "./fastlane/screenshots"
+
+skip_screenshots false
+skip_metadata false
+
+languages ["en-US"]

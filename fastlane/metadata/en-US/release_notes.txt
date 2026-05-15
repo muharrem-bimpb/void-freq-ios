@@ -1,0 +1,3 @@
+Initial release.
+
+Five ambient channels for deep focus: brown noise, rain, void, lo-fi beats, and binaural alpha entrainment. Real-time audio synthesis. Background audio. Works offline.

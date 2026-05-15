@@ -1,0 +1,95 @@
+default_platform(:ios)
+
+BUNDLE_ID = "ch.architectdna.voidfreq"
+APP_NAME  = "VOID FREQ"
+
+platform :ios do
+
+  # ── Register app on App Store Connect (run once) ──────────────────────────
+  lane :register do
+    produce(
+      app_identifier: BUNDLE_ID,
+      app_name:       APP_NAME,
+      language:       "en-US",
+      app_version:    "1.0.0",
+      sku:            "voidfreq-001",
+      team_name:      nil,
+      enable_services: {}
+    )
+    UI.success "App registered on App Store Connect ✓"
+  end
+
+  # ── Push metadata & screenshots without uploading a build ─────────────────
+  lane :metadata do
+    deliver(
+      skip_binary_upload: true,
+      skip_screenshots:   false,
+      force:              true,
+      submit_for_review:  false,
+      app_review_information: {
+        first_name:   "Muharrem",
+        last_name:    "Akdemir",
+        phone_number: "+41784479143",
+        email_address: "systems@architect-dna.ch",
+        notes: "Standard ambient audio app. No login required. No in-app purchases. All audio generated locally via Web Audio API."
+      }
+    )
+    UI.success "Metadata pushed ✓"
+  end
+
+  # ── Build (requires Xcode) ─────────────────────────────────────────────────
+  lane :build do
+    build_ios_app(
+      workspace:      "ios/App/App.xcworkspace",
+      scheme:         "App",
+      configuration:  "Release",
+      export_method:  "app-store",
+      output_directory: "./build",
+      output_name:    "VoidFreq.ipa"
+    )
+    UI.success "Build complete → ./build/VoidFreq.ipa"
+  end
+
+  # ── Upload IPA to TestFlight ───────────────────────────────────────────────
+  lane :beta do
+    build
+    upload_to_testflight(
+      app_identifier: BUNDLE_ID,
+      skip_waiting_for_build_processing: true
+    )
+    UI.success "Uploaded to TestFlight ✓"
+  end
+
+  # ── Full App Store submission ──────────────────────────────────────────────
+  lane :release do
+    build
+    deliver(
+      submit_for_review:      true,
+      automatic_release:      false,
+      force:                  true,
+      submission_information: {
+        add_id_info_uses_idfa:                   false,
+        add_id_info_serves_ads:                  false,
+        add_id_info_tracks_install:              false,
+        add_id_info_tracks_action:               false,
+        add_id_info_limits_tracking:             false,
+        export_compliance_uses_encryption:       false,
+        export_compliance_is_exempt:             true,
+        content_rights_has_rights:               true,
+        content_rights_contains_third_party:     false
+      }
+    )
+    UI.success "Submitted for App Store review ✓"
+  end
+
+  # ── Sync signing certs (run once to pull/create certs in iCloud Keychain) ─
+  lane :certs do
+    match(
+      type:           "appstore",
+      app_identifier: BUNDLE_ID,
+      readonly:       false
+    )
+    UI.success "Certs synced ✓"
+  end
+
+end

@@ -1,0 +1,30 @@
+VOID FREQ is a precision ambient sound studio built for focus, flow, and deep work.
+
+Five channels. Zero distractions.
+
+FOCUS
+Brown noise + 40Hz gamma entrainment. Scientifically associated with sustained concentration. The baseline for any serious session.
+
+RAIN
+Layered rainfall with sub-bass rumble and natural variation. Masks office noise. Dissolves mental chatter.
+
+VOID
+Five pure sine oscillators at sub-bass frequencies (30–120Hz). An isolation chamber for the mind. Nothing else.
+
+LO-FI
+A full lo-fi beat engine running in real time. Jazz chords, analog-style kick and hihat, vinyl crackle, tape warble LFO. Warm and human.
+
+NEURONS
+Binaural beats at 10Hz alpha differential. Left ear 200Hz, right ear 210Hz. Wear headphones. Let your brain synchronize.
+
+HOW IT WORKS
+Every sound is generated live using the Web Audio API — no streaming, no server, no subscription. Works offline. Continues in background. Your battery thanks you.
+
+LIVE VISUALIZER
+A real-time FFT visualizer reacts to every frequency shift. Watch the sound while you hear it.
+
+WHO IT'S FOR
+Anyone who needs to think clearly: developers, designers, writers, students, traders, architects.
+
+Built by Architect-DNA · Bern, Switzerland.
+Questions or feedback: systems@architect-dna.ch
