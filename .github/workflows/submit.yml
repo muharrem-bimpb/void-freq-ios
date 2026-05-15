@@ -134,11 +134,12 @@ jobs:
               existing = {s["attributes"]["screenshotDisplayType"]: s["id"] for s in r.json().get("data", [])}
               if display_type in existing:
                   set_id = existing[display_type]
-                  # Delete all existing screenshots first
+                  # Delete ALL existing screenshots (including broken ones)
                   r2 = requests.get(f"{BASE}/appScreenshotSets/{set_id}/appScreenshots", headers=H())
-                  for ss in r2.json().get("data", []):
-                      requests.delete(f"{BASE}/appScreenshots/{ss['id']}", headers=H())
-                  print(f"  {display_type}: cleared {len(r2.json().get('data',[]))} old screenshots")
+                  shots = r2.json().get("data", [])
+                  for ss in shots:
+                      rd = requests.delete(f"{BASE}/appScreenshots/{ss['id']}", headers=H())
+                  print(f"  {display_type}: cleared {len(shots)} old screenshots")
               else:
                   r = requests.post(f"{BASE}/appScreenshotSets", headers=H(),
                       json={"data": {"type": "appScreenshotSets",
