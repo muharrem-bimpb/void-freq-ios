@@ -87,30 +87,24 @@ jobs:
                              "relationships": {"build": {"data": {"type": "builds", "id": build_id}}}}})
           print(f"Attach build: {r.status_code}")
 
-          # Set pricing to free — check existing schedule first
-          r = requests.get(f"{BASE}/apps/{app_id}/appPriceSchedule", headers=H())
-          print(f"Price schedule check: {r.status_code}")
-          if r.status_code == 404:
-              # Create free price schedule
-              r2 = requests.post(f"{BASE}/appPriceSchedules", headers=H(),
-                  json={
-                      "data": {
-                          "type": "appPriceSchedules",
-                          "relationships": {
-                              "app": {"data": {"type": "apps", "id": app_id}},
-                              "baseTerritory": {"data": {"type": "territories", "id": "USA"}},
-                              "manualPrices": {"data": [{"type": "appPrices", "id": "p0", "tempId": "p0"}]}
-                          }
-                      },
-                      "included": [{
-                          "type": "appPrices", "id": "p0",
-                          "attributes": {"startDate": None},
-                          "relationships": {"appPriceTier": {"data": {"type": "appPriceTiers", "id": "0"}}}
-                      }]
-                  })
-              print(f"Create price schedule: {r2.status_code}" + ("" if r2.status_code in (200,201,409) else f" {r2.text[:300]}"))
-          else:
-              print("Price schedule already exists")
+          # Set pricing to CHF 2 (Tier 2, $1.99)
+          r2 = requests.post(f"{BASE}/appPriceSchedules", headers=H(),
+              json={
+                  "data": {
+                      "type": "appPriceSchedules",
+                      "relationships": {
+                          "app": {"data": {"type": "apps", "id": app_id}},
+                          "baseTerritory": {"data": {"type": "territories", "id": "USA"}},
+                          "manualPrices": {"data": [{"type": "appPrices", "id": "p2", "tempId": "p2"}]}
+                      }
+                  },
+                  "included": [{
+                      "type": "appPrices", "id": "p2",
+                      "attributes": {"startDate": None},
+                      "relationships": {"appPriceTier": {"data": {"type": "appPriceTiers", "id": "2"}}}
+                  }]
+              })
+          print(f"Set price CHF 2: {r2.status_code}" + ("" if r2.status_code in (200,201,409) else f" {r2.text[:200]}"))
 
           # Publish app privacy — get the publish state resource
           r = requests.get(f"{BASE}/apps/{app_id}/appDataUsages", headers=H())
