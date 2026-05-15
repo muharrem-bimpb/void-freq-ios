@@ -146,7 +146,7 @@ jobs:
                                  "relationships": {"appStoreVersionLocalization":
                                      {"data": {"type": "appStoreVersionLocalizations", "id": localization_id}}}}})
               if r.status_code not in (200, 201):
-                  print(f"Create set {display_type}: {r.status_code} {r.text[:100]}"); return
+                  print(f"Create set {display_type}: {r.status_code} {r.text[:100]}"); return None
               set_id = r.json()["data"]["id"]
 
               for img_path in image_paths:
@@ -175,6 +175,20 @@ jobs:
                                      "attributes": {"uploaded": True,
                                                     "sourceFileChecksum": hashlib.md5(img_bytes).hexdigest()}}})
                   print(f"  Screenshot {pathlib.Path(img_path).name}: {r.status_code}")
+              return set_id
+
+          def wait_for_screenshots(set_id, expected_count, max_wait=120):
+              import time as t
+              for i in range(max_wait // 5):
+                  r = requests.get(f"{BASE}/appScreenshotSets/{set_id}/appScreenshots", headers=H())
+                  shots = r.json().get("data", [])
+                  states = [s["attributes"].get("assetStateError") or s["attributes"].get("uploadOperations") and "pending" or "done" for s in shots]
+                  complete = [s for s in shots if s["attributes"].get("assetToken") and not s["attributes"].get("assetStateError")]
+                  print(f"  Screenshots: {len(complete)}/{expected_count} complete (attempt {i+1})")
+                  if len(complete) >= expected_count:
+                      return True
+                  t.sleep(5)
+              return False
 
           # Get localizations for the version
           r = requests.get(f"{BASE}/appStoreVersions/{version_id}/appStoreVersionLocalizations", headers=H())
@@ -184,8 +198,10 @@ jobs:
               print(f"Uploading screenshots to localization {loc_id}")
               iphone_shots = sorted(pathlib.Path("screenshots").glob("[0-9]*.png"))
               ipad_shots   = sorted(pathlib.Path("screenshots/ipad").glob("*.png"))
-              upload_screenshots(loc_id, "APP_IPHONE_65", iphone_shots)
-              upload_screenshots(loc_id, "APP_IPAD_PRO_3GEN_129", ipad_shots)
+              iphone_set_id = upload_screenshots(loc_id, "APP_IPHONE_65", iphone_shots)
+              ipad_set_id   = upload_screenshots(loc_id, "APP_IPAD_PRO_3GEN_129", ipad_shots)
+              if iphone_set_id: wait_for_screenshots(iphone_set_id, len(iphone_shots))
+              if ipad_set_id:   wait_for_screenshots(ipad_set_id, len(ipad_shots))
 
           # Find or create a review submission
           submission_id = None
