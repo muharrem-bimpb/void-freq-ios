@@ -1,0 +1,60 @@
+name: Submit to App Store Review
+
+on:
+  workflow_dispatch:
+
+jobs:
+  submit:
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Submit to App Store Review
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          echo "$ASC_PRIVATE_KEY" > /tmp/asc_key.p8
+
+          gem install fastlane --no-document
+
+          cat > /tmp/submit.rb << 'RUBY'
+          require 'spaceship'
+
+          token = Spaceship::ConnectAPI::Token.create(
+            key_id:     ENV['ASC_KEY_ID'],
+            issuer_id:  ENV['ASC_ISSUER_ID'],
+            filepath:   '/tmp/asc_key.p8'
+          )
+          Spaceship::ConnectAPI.token = token
+
+          app = Spaceship::ConnectAPI::App.find('ch.architectdna.voidfreq')
+          puts "App: #{app.name} (#{app.bundle_id})"
+
+          # Get the latest live or ready-to-submit version
+          version = app.get_edit_app_store_version(platform: 'IOS')
+          raise "No editable version found" unless version
+          puts "Version: #{version.version_string} — state: #{version.app_store_state}"
+
+          # Find the latest processed build
+          builds = Spaceship::ConnectAPI::Build.all(
+            app_id: app.id,
+            filter: { processingState: 'VALID', platform: 'IOS' }
+          )
+          build = builds.first
+          raise "No valid build found — wait for TestFlight processing" unless build
+          puts "Build: #{build.version} (#{build.upload_date})"
+
+          # Attach build to version
+          version.select_build(build_id: build.id)
+          puts "Build attached"
+
+          # Submit for review
+          version.submit_for_review
+          puts "Submitted for App Store review!"
+          RUBY
+
+          GEM_PATH=/opt/homebrew/lib/ruby/gems/4.0.0 ruby /tmp/submit.rb
