@@ -9,6 +9,8 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Submit to App Store Review
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -138,6 +140,64 @@ jobs:
                   break
           if not privacy_published:
               print("WARNING: Could not publish privacy via API — you may need to click Publish in App Store Connect > App Privacy")
+
+          # Upload screenshots
+          import hashlib, base64, pathlib
+
+          def upload_screenshots(localization_id, display_type, image_paths):
+              # Get or create screenshot set for this display type
+              r = requests.get(f"{BASE}/appStoreVersionLocalizations/{localization_id}/appScreenshotSets", headers=H())
+              existing = {s["attributes"]["screenshotDisplayType"]: s["id"] for s in r.json().get("data", [])}
+              if display_type in existing:
+                  set_id = existing[display_type]
+              else:
+                  r = requests.post(f"{BASE}/appScreenshotSets", headers=H(),
+                      json={"data": {"type": "appScreenshotSets",
+                                     "attributes": {"screenshotDisplayType": display_type},
+                                     "relationships": {"appStoreVersionLocalization":
+                                         {"data": {"type": "appStoreVersionLocalizations", "id": localization_id}}}}})
+                  if r.status_code not in (200, 201):
+                      print(f"Create set {display_type}: {r.status_code} {r.text[:100]}")
+                      return
+                  set_id = r.json()["data"]["id"]
+
+              for img_path in image_paths:
+                  img_bytes = pathlib.Path(img_path).read_bytes()
+                  md5 = base64.b64encode(hashlib.md5(img_bytes).digest()).decode()
+                  # Reserve upload slot
+                  r = requests.post(f"{BASE}/appScreenshots", headers=H(),
+                      json={"data": {"type": "appScreenshots",
+                                     "attributes": {"fileName": pathlib.Path(img_path).name,
+                                                    "fileSize": len(img_bytes)},
+                                     "relationships": {"appScreenshotSet":
+                                         {"data": {"type": "appScreenshotSets", "id": set_id}}}}})
+                  if r.status_code not in (200, 201):
+                      print(f"Reserve slot: {r.status_code} {r.text[:100]}"); continue
+                  ss = r.json()["data"]
+                  ss_id = ss["id"]
+                  upload_ops = ss["attributes"]["uploadOperations"]
+                  # Upload image chunks
+                  for op in upload_ops:
+                      chunk = img_bytes[op["offset"]:op["offset"]+op["length"]]
+                      op_headers = {h["name"]: h["value"] for h in op["requestHeaders"]}
+                      requests.put(op["url"], headers=op_headers, data=chunk)
+                  # Commit
+                  r = requests.patch(f"{BASE}/appScreenshots/{ss_id}", headers=H(),
+                      json={"data": {"type": "appScreenshots", "id": ss_id,
+                                     "attributes": {"uploaded": True,
+                                                    "sourceFileChecksum": hashlib.md5(img_bytes).hexdigest()}}})
+                  print(f"  Screenshot {pathlib.Path(img_path).name}: {r.status_code}")
+
+          # Get localizations for the version
+          r = requests.get(f"{BASE}/appStoreVersions/{version_id}/appStoreVersionLocalizations", headers=H())
+          locs = r.json()["data"]
+          if locs:
+              loc_id = locs[0]["id"]
+              print(f"Uploading screenshots to localization {loc_id}")
+              iphone_shots = sorted(pathlib.Path("screenshots").glob("[0-9]*.png"))
+              ipad_shots   = sorted(pathlib.Path("screenshots/ipad").glob("*.png"))
+              upload_screenshots(loc_id, "APP_IPHONE_65", iphone_shots)
+              upload_screenshots(loc_id, "APP_IPAD_PRO_3GEN_129", ipad_shots)
 
           # Create review submission
           r = requests.post(f"{BASE}/reviewSubmissions", headers=H(),
