@@ -19,14 +19,14 @@ jobs:
           pip3 install PyJWT cryptography requests --quiet --break-system-packages
 
           python3 << 'PYEOF'
-          import jwt, time, requests, os, sys
+          import jwt, time, requests, os, sys, json
 
           key_id    = os.environ["ASC_KEY_ID"]
           issuer_id = os.environ["ASC_ISSUER_ID"]
           private_key = open("/tmp/asc_key.p8").read()
           bundle_id = "ch.architectdna.voidfreq"
 
-          def token():
+          def make_token():
               payload = {
                   "iss": issuer_id,
                   "iat": int(time.time()),
@@ -36,110 +36,107 @@ jobs:
               return jwt.encode(payload, private_key, algorithm="ES256",
                                 headers={"kid": key_id})
 
-          H = {"Authorization": f"Bearer {token()}", "Content-Type": "application/json"}
-          BASE = "https://api.appstoreconnect.apple.com/v1"
+          def headers():
+              return {"Authorization": f"Bearer {make_token()}", "Content-Type": "application/json"}
+
+          BASE  = "https://api.appstoreconnect.apple.com/v1"
+          BASE2 = "https://api.appstoreconnect.apple.com/v2"
 
           # Find the app
-          r = requests.get(f"{BASE}/apps?filter[bundleId]={bundle_id}", headers=H)
+          r = requests.get(f"{BASE}/apps?filter[bundleId]={bundle_id}", headers=headers())
           r.raise_for_status()
           app = r.json()["data"][0]
           app_id = app["id"]
           print(f"App: {app['attributes']['name']} ({app_id})")
 
           # Get editable app store version
-          r = requests.get(f"{BASE}/apps/{app_id}/appStoreVersions?filter[platform]=IOS&filter[appStoreState]=PREPARE_FOR_SUBMISSION,WAITING_FOR_REVIEW,DEVELOPER_REJECTED,REJECTED,METADATA_REJECTED", headers=H)
+          r = requests.get(f"{BASE}/apps/{app_id}/appStoreVersions?filter[platform]=IOS", headers=headers())
           r.raise_for_status()
           versions = r.json()["data"]
-          if not versions:
-              # Try without state filter
-              r = requests.get(f"{BASE}/apps/{app_id}/appStoreVersions?filter[platform]=IOS", headers=H)
-              r.raise_for_status()
-              versions = r.json()["data"]
-
-          # Pick the one that's editable
-          editable_states = {"PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED", "INVALID_BINARY"}
-          version = next((v for v in versions if v["attributes"]["appStoreState"] in editable_states), None)
+          editable = {"PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED", "INVALID_BINARY"}
+          version = next((v for v in versions if v["attributes"]["appStoreState"] in editable), None) or (versions[0] if versions else None)
           if not version:
-              version = versions[0] if versions else None
-          if not version:
-              print("No version found — create one in App Store Connect first")
-              sys.exit(1)
-
+              print("No version found"); sys.exit(1)
           version_id = version["id"]
-          state = version["attributes"]["appStoreState"]
-          ver_str = version["attributes"]["versionString"]
-          print(f"Version: {ver_str} — state: {state}")
+          print(f"Version: {version['attributes']['versionString']} — {version['attributes']['appStoreState']}")
 
-          # Find latest valid build
-          r = requests.get(f"{BASE}/builds?filter[app]={app_id}&sort=-uploadedDate&limit=5", headers=H)
+          # Find latest VALID build
+          r = requests.get(f"{BASE}/builds?filter[app]={app_id}&sort=-uploadedDate&limit=5", headers=headers())
           r.raise_for_status()
-          all_builds = r.json()["data"]
-          builds = [b for b in all_builds if b["attributes"]["processingState"] == "VALID"]
+          builds = [b for b in r.json()["data"] if b["attributes"]["processingState"] == "VALID"]
           if not builds:
-              states = [b["attributes"]["processingState"] for b in all_builds]
-              print(f"No VALID build yet — states: {states}. Retry in a few minutes.")
-              sys.exit(1)
-          build = builds[0]
-          build_id = build["id"]
-          build_ver = build["attributes"]["version"]
-          print(f"Build: {build_ver} ({build_id})")
+              print(f"No VALID build yet. States: {[b['attributes']['processingState'] for b in r.json()['data']]}"); sys.exit(1)
+          build_id = builds[0]["id"]
+          print(f"Build: {builds[0]['attributes']['version']} ({build_id})")
 
           # Attach build to version
-          r = requests.patch(
-              f"{BASE}/appStoreVersions/{version_id}",
-              headers=H,
+          r = requests.patch(f"{BASE}/appStoreVersions/{version_id}", headers=headers(),
               json={"data": {"type": "appStoreVersions", "id": version_id,
-                             "relationships": {"build": {"data": {"type": "builds", "id": build_id}}}}}
-          )
+                             "relationships": {"build": {"data": {"type": "builds", "id": build_id}}}}})
           print(f"Attach build: {r.status_code}")
-          if r.status_code not in (200, 204):
-              print(r.text)
 
-          # Check version state after attaching build
-          r2 = requests.get(f"{BASE}/appStoreVersions/{version_id}", headers=H)
-          v_state = r2.json()["data"]["attributes"]["appStoreState"]
-          print(f"Version state after attach: {v_state}")
+          # Set pricing to Free via v2 API
+          r = requests.post(f"{BASE2}/appPriceSchedules", headers=headers(),
+              json={
+                  "data": {
+                      "type": "appPriceSchedules",
+                      "relationships": {
+                          "app": {"data": {"type": "apps", "id": app_id}},
+                          "baseTerritory": {"data": {"type": "territories", "id": "USA"}},
+                          "manualPrices": {"data": [{"type": "appPrices", "id": "p0", "tempId": "p0"}]}
+                      }
+                  },
+                  "included": [{
+                      "type": "appPrices",
+                      "id": "p0",
+                      "attributes": {"startDate": None},
+                      "relationships": {
+                          "appPriceTier": {"data": {"type": "appPriceTiers", "id": "0"}}
+                      }
+                  }]
+              })
+          print(f"Set pricing free: {r.status_code}" + ("" if r.status_code in (200,201,409) else f" — {r.text[:300]}"))
 
-          # Create review submission (new API)
-          r = requests.post(
-              f"{BASE}/reviewSubmissions",
-              headers=H,
+          # Publish privacy — no data collected
+          r = requests.get(f"{BASE}/apps/{app_id}/appDataUsagesPublishState", headers=headers())
+          print(f"Privacy state: {r.status_code} {r.text[:100] if r.status_code != 200 else r.json()['data']['attributes']}")
+          if r.status_code == 200 and not r.json()["data"]["attributes"].get("published"):
+              r2 = requests.patch(
+                  f"{BASE}/apps/{app_id}/appDataUsagesPublishState",
+                  headers=headers(),
+                  json={"data": {"type": "appDataUsagesPublishState", "id": app_id,
+                                 "attributes": {"published": True}}}
+              )
+              print(f"Publish privacy: {r2.status_code}" + ("" if r2.status_code in (200,204) else f" — {r2.text[:200]}"))
+
+          # Create review submission
+          r = requests.post(f"{BASE}/reviewSubmissions", headers=headers(),
               json={"data": {"type": "reviewSubmissions",
                              "attributes": {"platform": "IOS"},
-                             "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}}
-          )
+                             "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})
           if r.status_code not in (200, 201):
-              print(f"Create review submission: {r.status_code} {r.text}")
-              sys.exit(1)
+              print(f"Create submission: {r.status_code} {r.text}"); sys.exit(1)
           submission_id = r.json()["data"]["id"]
-          print(f"Review submission created: {submission_id}")
+          print(f"Review submission: {submission_id}")
 
-          # Add the app store version as a review item
-          r = requests.post(
-              f"{BASE}/reviewSubmissionItems",
-              headers=H,
+          # Add version to review submission
+          r = requests.post(f"{BASE}/reviewSubmissionItems", headers=headers(),
               json={"data": {"type": "reviewSubmissionItems",
                              "relationships": {
                                  "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": submission_id}},
                                  "appStoreVersion": {"data": {"type": "appStoreVersions", "id": version_id}}
-                             }}}
-          )
+                             }}})
           if r.status_code not in (200, 201):
-              print(f"Add review item: {r.status_code} {r.text}")
-              sys.exit(1)
-          print("Version added to review submission")
+              print(f"Add item: {r.status_code} {r.text}"); sys.exit(1)
+          print("Version added to submission")
 
-          # Submit for review
-          r = requests.post(
-              f"{BASE}/reviewSubmissions/{submission_id}/actions/submit",
-              headers=H,
-              json={}
-          )
+          # Submit
+          r = requests.post(f"{BASE}/reviewSubmissions/{submission_id}/actions/submit",
+                            headers=headers(), json={})
           if r.status_code in (200, 201, 204):
-              print("Submitted for App Store review!")
+              print("SUBMITTED FOR APP STORE REVIEW!")
           elif r.status_code == 409:
-              print("Already submitted or in review")
+              print("Already in review")
           else:
-              print(f"Submit response: {r.status_code} {r.text}")
-              sys.exit(1)
+              print(f"Submit: {r.status_code} {r.text}"); sys.exit(1)
           PYEOF
