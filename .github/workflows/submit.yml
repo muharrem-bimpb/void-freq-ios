@@ -16,7 +16,7 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
         run: |
           echo "$ASC_PRIVATE_KEY" > /tmp/asc_key.p8
-          pip3 install PyJWT cryptography requests --quiet
+          pip3 install PyJWT cryptography requests --quiet --break-system-packages
 
           python3 << 'PYEOF'
           import jwt, time, requests, os, sys
