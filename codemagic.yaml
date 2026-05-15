@@ -1,0 +1,71 @@
+workflows:
+  ios-release:
+    name: VOID FREQ iOS Release
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      xcode: 26
+      node: 24
+      vars:
+        APP_ID: ch.architectdna.voidfreq
+        BUNDLE_ID: ch.architectdna.voidfreq
+      groups:
+        - apple_credentials
+        - signing
+
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+
+      - name: Sync Capacitor
+        script: npx cap sync ios
+
+      - name: Set up keychain
+        script: |
+          keychain initialize
+          echo $DIST_CERT_BASE64 | base64 --decode > dist.cer
+          echo $DIST_KEY_BASE64  | base64 --decode > dist.key
+          openssl x509 -in dist.cer -out dist.pem 2>/dev/null || openssl x509 -in dist.cer -inform DER -out dist.pem
+          openssl pkcs12 -export -out dist.p12 -inkey dist.key -in dist.pem -passout pass:buildpass
+          keychain add-certificates --certificate dist.p12 --certificate-password buildpass
+
+      - name: Install provisioning profile
+        script: |
+          echo $PROVISIONING_PROFILE_BASE64 | base64 --decode > /tmp/VoidFreq.mobileprovision
+          xcode-project use-profiles --path /tmp/VoidFreq.mobileprovision
+
+      - name: Resolve Swift packages
+        script: |
+          xcodebuild -resolvePackageDependencies \
+            -project ios/App/App.xcodeproj \
+            -scheme App
+
+      - name: Build IPA
+        script: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -archivePath build/App.xcarchive \
+            archive \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER="VoidFreq Distribution" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            DEVELOPMENT_TEAM=V28MG47TZC
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath build/App.xcarchive \
+            -exportOptionsPlist ios/ExportOptions.plist \
+            -exportPath build/
+
+    artifacts:
+      - build/App.ipa
+
+    publishing:
+      app_store_connect:
+        api_key: $ASC_PRIVATE_KEY
+        key_id: $ASC_KEY_ID
+        issuer_id: $ASC_ISSUER_ID
+        submit_to_testflight: true
