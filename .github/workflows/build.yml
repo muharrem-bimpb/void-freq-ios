@@ -71,7 +71,8 @@ jobs:
             archive \
             CODE_SIGN_STYLE=Manual \
             PROVISIONING_PROFILE_SPECIFIER="VoidFreq Distribution" \
-            CODE_SIGN_IDENTITY="Apple Distribution"
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            DEVELOPMENT_TEAM=V28MG47TZC
 
           xcodebuild \
             -exportArchive \
