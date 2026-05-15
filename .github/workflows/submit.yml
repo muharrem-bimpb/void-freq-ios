@@ -71,11 +71,13 @@ jobs:
           print(f"Version: {ver_str} — state: {state}")
 
           # Find latest valid build
-          r = requests.get(f"{BASE}/builds?filter[app]={app_id}&filter[processingState]=VALID&filter[platform]=IOS&sort=-uploadedDate&limit=1", headers=H)
+          r = requests.get(f"{BASE}/builds?filter[app]={app_id}&sort=-uploadedDate&limit=5", headers=H)
           r.raise_for_status()
-          builds = r.json()["data"]
+          all_builds = r.json()["data"]
+          builds = [b for b in all_builds if b["attributes"]["processingState"] == "VALID"]
           if not builds:
-              print("No valid build found — TestFlight may still be processing, retry in a few minutes")
+              states = [b["attributes"]["processingState"] for b in all_builds]
+              print(f"No VALID build yet — states: {states}. Retry in a few minutes.")
               sys.exit(1)
           build = builds[0]
           build_id = build["id"]
