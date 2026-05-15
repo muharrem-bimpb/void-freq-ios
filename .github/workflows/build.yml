@@ -88,15 +88,19 @@ jobs:
         run: |
           gem install fastlane --no-document
           echo "$ASC_PRIVATE_KEY" > /tmp/asc_key.p8
-          cat > /tmp/api_key.json <<EOF
-          {
-            "key_id": "$ASC_KEY_ID",
-            "issuer_id": "$ASC_ISSUER_ID",
-            "key_filepath": "/tmp/asc_key.p8",
-            "duration": 1200,
-            "in_house": false
-          }
-          EOF
+          KEY_CONTENT=$(cat /tmp/asc_key.p8)
+          python3 -c "
+import json, os
+d = {
+  'key_id': os.environ['ASC_KEY_ID'],
+  'issuer_id': os.environ['ASC_ISSUER_ID'],
+  'key': open('/tmp/asc_key.p8').read(),
+  'duration': 1200,
+  'in_house': False
+}
+json.dump(d, open('/tmp/api_key.json','w'))
+print('API key JSON written')
+"
           fastlane run upload_to_testflight \
             ipa:"build/App.ipa" \
             skip_waiting_for_build_processing:true \
