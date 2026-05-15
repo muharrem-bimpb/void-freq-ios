@@ -238,7 +238,7 @@ jobs:
 
           # Ensure the app store version is in the submission items
           ri = requests.get(f"{BASE}/reviewSubmissions/{submission_id}/items", headers=H())
-          existing_versions = [i["relationships"].get("appStoreVersion",{}).get("data",{}).get("id") for i in ri.json().get("data",[])]
+          existing_versions = [i.get("relationships",{}).get("appStoreVersion",{}).get("data",{}).get("id") for i in ri.json().get("data",[])]
           if version_id not in existing_versions:
               r = requests.post(f"{BASE}/reviewSubmissionItems", headers=H(),
                   json={"data": {"type": "reviewSubmissionItems",
