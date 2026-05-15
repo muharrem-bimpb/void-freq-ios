@@ -189,22 +189,37 @@ jobs:
               upload_screenshots(loc_id, "APP_IPHONE_65", iphone_shots)
               upload_screenshots(loc_id, "APP_IPAD_PRO_3GEN_129", ipad_shots)
 
-          # Cancel any stale open review submissions
-          r = requests.get(f"{BASE}/reviewSubmissions?filter[app]={app_id}&filter[platform]=IOS", headers=H())
-          print(f"List submissions: {r.status_code}, count={len(r.json().get('data',[]))}")
-          if r.status_code == 200:
-              for sub in r.json().get("data", []):
+          # Cancel / delete all open review submissions
+          already_submitted = False
+          url = f"{BASE}/reviewSubmissions?filter[app]={app_id}&filter[platform]=IOS&limit=100"
+          while url:
+              r = requests.get(url, headers=H())
+              if r.status_code != 200: break
+              body = r.json()
+              for sub in body.get("data", []):
                   sub_state = sub["attributes"].get("state","")
                   sub_id = sub["id"]
                   print(f"  Submission {sub_id}: state={sub_state}")
                   if sub_state in ("WAITING_FOR_REVIEW", "IN_REVIEW"):
-                      print(f"  -> Already in review queue!")
+                      print("  -> Already in review queue! Skipping create.")
+                      already_submitted = True
                   elif sub_state not in ("COMPLETE", "CANCELLED"):
-                      # Try cancelling
-                      r2 = requests.patch(f"{BASE}/reviewSubmissions/{sub_id}", headers=H(),
-                          json={"data": {"type": "reviewSubmissions", "id": sub_id,
-                                         "attributes": {"canceled": True}}})
-                      print(f"  Cancel {sub_id}: {r2.status_code}" + ("" if r2.status_code in (200,204) else f" {r2.text[:150]}"))
+                      # Try DELETE first, then PATCH cancel
+                      r2 = requests.delete(f"{BASE}/reviewSubmissions/{sub_id}", headers=H())
+                      if r2.status_code in (200, 204):
+                          print(f"  Deleted {sub_id}: {r2.status_code}")
+                      else:
+                          # Delete items then retry
+                          ri = requests.get(f"{BASE}/reviewSubmissions/{sub_id}/items", headers=H())
+                          for item in ri.json().get("data", []):
+                              requests.delete(f"{BASE}/reviewSubmissionItems/{item['id']}", headers=H())
+                          r3 = requests.delete(f"{BASE}/reviewSubmissions/{sub_id}", headers=H())
+                          print(f"  Delete after item removal {sub_id}: {r3.status_code}")
+              url = body.get("links", {}).get("next")
+
+          if already_submitted:
+              print("App is already in review queue — done!")
+              sys.exit(0)
 
           # Create review submission
           r = requests.post(f"{BASE}/reviewSubmissions", headers=H(),
