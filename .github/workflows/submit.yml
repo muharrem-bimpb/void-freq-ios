@@ -213,6 +213,14 @@ jobs:
           else:
               print(f"Reusing submission: {submission_id}")
 
+          # Check version validation state
+          rv = requests.get(f"{BASE}/appStoreVersions/{version_id}?include=appStoreVersionSubmission", headers=H())
+          print(f"Version state: {rv.json()['data']['attributes']['appStoreState']}")
+
+          # Check data usages published
+          rdu = requests.get(f"{BASE}/apps/{app_id}/appDataUsages", headers=H())
+          print(f"Privacy data usages: {rdu.status_code} count={len(rdu.json().get('data',[]))}")
+
           # Ensure the app store version is in the submission items
           ri = requests.get(f"{BASE}/reviewSubmissions/{submission_id}/items", headers=H())
           existing_versions = [i["relationships"].get("appStoreVersion",{}).get("data",{}).get("id") for i in ri.json().get("data",[])]
@@ -223,7 +231,7 @@ jobs:
                                      "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": submission_id}},
                                      "appStoreVersion": {"data": {"type": "appStoreVersions", "id": version_id}}
                                  }}})
-              print(f"Add version item: {r.status_code}" + ("" if r.status_code in (200,201) else f" {r.text[:200]}"))
+              print(f"Add version item: {r.status_code}" + ("" if r.status_code in (200,201) else f" {r.text[:500]}"))
 
           # Submit for review — try multiple endpoint formats
           submitted = False
