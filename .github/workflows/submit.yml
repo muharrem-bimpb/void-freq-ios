@@ -94,14 +94,42 @@ jobs:
           if r.status_code not in (200, 204):
               print(f"Attach build response: {r.status_code} {r.text}")
 
+          # Create review submission (new API)
+          r = requests.post(
+              f"{BASE}/reviewSubmissions",
+              headers=H,
+              json={"data": {"type": "reviewSubmissions",
+                             "attributes": {"platform": "IOS"},
+                             "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}}
+          )
+          if r.status_code not in (200, 201):
+              print(f"Create review submission: {r.status_code} {r.text}")
+              sys.exit(1)
+          submission_id = r.json()["data"]["id"]
+          print(f"Review submission created: {submission_id}")
+
+          # Add the app store version as a review item
+          r = requests.post(
+              f"{BASE}/reviewSubmissionItems",
+              headers=H,
+              json={"data": {"type": "reviewSubmissionItems",
+                             "relationships": {
+                                 "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": submission_id}},
+                                 "appStoreVersion": {"data": {"type": "appStoreVersions", "id": version_id}}
+                             }}}
+          )
+          if r.status_code not in (200, 201):
+              print(f"Add review item: {r.status_code} {r.text}")
+              sys.exit(1)
+          print("Version added to review submission")
+
           # Submit for review
           r = requests.post(
-              f"{BASE}/appStoreVersionSubmissions",
+              f"{BASE}/reviewSubmissions/{submission_id}/actions/submit",
               headers=H,
-              json={"data": {"type": "appStoreVersionSubmissions",
-                             "relationships": {"appStoreVersion": {"data": {"type": "appStoreVersions", "id": version_id}}}}}
+              json={}
           )
-          if r.status_code in (200, 201):
+          if r.status_code in (200, 201, 204):
               print("Submitted for App Store review!")
           elif r.status_code == 409:
               print("Already submitted or in review")
