@@ -23,17 +23,23 @@ workflows:
 
       - name: Set up keychain
         script: |
-          keychain initialize
-          echo $DIST_CERT_BASE64 | base64 --decode > dist.cer
-          echo $DIST_KEY_BASE64  | base64 --decode > dist.key
+          echo "$DIST_CERT_BASE64" | base64 --decode > dist.cer
+          echo "$DIST_KEY_BASE64"  | base64 --decode > dist.key
           openssl x509 -in dist.cer -out dist.pem 2>/dev/null || openssl x509 -in dist.cer -inform DER -out dist.pem
-          openssl pkcs12 -export -out dist.p12 -inkey dist.key -in dist.pem -passout pass:buildpass
-          keychain add-certificates --certificate dist.p12 --certificate-password buildpass
+          openssl pkcs12 -legacy -export -out dist.p12 -inkey dist.key -in dist.pem -passout pass:buildpass
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import dist.p12 -k build.keychain -P buildpass -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
 
       - name: Install provisioning profile
         script: |
-          echo $PROVISIONING_PROFILE_BASE64 | base64 --decode > /tmp/VoidFreq.mobileprovision
-          xcode-project use-profiles --path /tmp/VoidFreq.mobileprovision
+          PP_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PP_DIR"
+          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PP_DIR/VoidFreq.mobileprovision"
+          echo "Profile installed to $PP_DIR"
 
       - name: Resolve Swift packages
         script: |
