@@ -225,9 +225,23 @@ jobs:
                                  }}})
               print(f"Add version item: {r.status_code}" + ("" if r.status_code in (200,201) else f" {r.text[:200]}"))
 
-          # Submit for review
-          r = requests.post(f"{BASE}/reviewSubmissions/{submission_id}/actions/submit", headers=H(), json={})
-          if r.status_code in (200, 201, 204): print("SUBMITTED FOR APP STORE REVIEW!")
-          elif r.status_code == 409: print(f"409: {r.text[:300]}")
-          else: print(f"Submit: {r.status_code} {r.text}"); sys.exit(1)
+          # Submit for review — try multiple endpoint formats
+          submitted = False
+          for method, url, body in [
+              ("POST", f"https://api.appstoreconnect.apple.com/v2/reviewSubmissions/{submission_id}/actions/submit", {}),
+              ("PATCH", f"{BASE}/reviewSubmissions/{submission_id}", {"data": {"type": "reviewSubmissions", "id": submission_id, "attributes": {"canceled": False}}}),
+              ("POST", f"{BASE}/reviewSubmissions/{submission_id}/actions/submit", {}),
+          ]:
+              r = getattr(requests, method.lower())(url, headers=H(), json=body)
+              print(f"Submit [{method} {url.split('/')[-2:]}]: {r.status_code}")
+              if r.status_code in (200, 201, 204):
+                  print("SUBMITTED FOR APP STORE REVIEW!")
+                  submitted = True
+                  break
+              elif r.status_code == 409 and "WAITING_FOR_REVIEW" in r.text:
+                  print("Already in review!"); submitted = True; break
+              elif r.status_code not in (404, 422):
+                  print(r.text[:300])
+          if not submitted:
+              print("Could not submit via API — check App Store Connect manually"); sys.exit(1)
           PYEOF
